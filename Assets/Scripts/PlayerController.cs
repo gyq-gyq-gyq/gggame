@@ -24,6 +24,7 @@ public class PlayerController : MonoBehaviour
     private bool isGrounded;
     private bool _wasGrounded;
     [SerializeField] private bool flightUnlocked;
+    [SerializeField] private bool slimeFormUnlocked;
 
     [Header("翅膀耐久系统")]
     public float maxStamina = 100f;        
@@ -37,6 +38,9 @@ public class PlayerController : MonoBehaviour
     [Header("飞行赋能区")]
     public bool isInInfiniteFlightZone;
     [SerializeField, Min(0.1f)] private float flappyFlapVelocity = 4f;
+
+    public bool IsClimbingTree => currentForm == Form.Normal && activeTreeClimber != null;
+    public int TreeAttachmentSide => treeAttachSide;
 
     private CatTreeClimber activeTreeClimber;
     private float treeGravityScale;
@@ -73,6 +77,11 @@ public class PlayerController : MonoBehaviour
             cameraFollow.SetTarget(transform);
         }
 
+        if (!IsFormUnlocked(currentForm))
+        {
+            currentForm = Form.Normal;
+        }
+
         ApplyFormAttributes();
     }
 
@@ -81,10 +90,9 @@ public class PlayerController : MonoBehaviour
         horizontalInput = Input.GetAxisRaw("Horizontal");
 
         // Tab 键切换形态
-        if (Input.GetKeyDown(KeyCode.Tab) && activeForms.Count > 1)
+        if (Input.GetKeyDown(KeyCode.Tab))
         {
-            formIndex = (formIndex + 1) % activeForms.Count;
-            SwitchForm(activeForms[formIndex]);
+            SwitchToNextUnlockedForm();
         }
 
         // ================= 状态分流控制 =================
@@ -138,6 +146,39 @@ public class PlayerController : MonoBehaviour
                 }
             }
         }
+    }
+
+    private GUIStyle staminaLabel;
+
+    private void OnGUI()
+    {
+        if (currentForm != Form.Wing) return;
+        if (staminaLabel == null)
+        {
+            staminaLabel = new GUIStyle(GUI.skin.label);
+            staminaLabel.fontSize = 16;
+            staminaLabel.fontStyle = FontStyle.Bold;
+            staminaLabel.normal.textColor = Color.white;
+        }
+
+        Matrix4x4 oldMatrix = GUI.matrix;
+        Color oldColor = GUI.color;
+        float uiScale = Mathf.Clamp(Screen.height / 720f, 0.75f, 2f);
+        GUI.matrix = Matrix4x4.Scale(new Vector3(uiScale, uiScale, 1f));
+        float ratio = isInInfiniteFlightZone ? 1f :
+            (maxStamina > 0f ? Mathf.Clamp01(currentStamina / maxStamina) : 0f);
+        GUI.color = new Color(0.08f, 0.10f, 0.15f, 0.92f);
+        GUI.DrawTexture(new Rect(20f, 20f, 264f, 72f), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        string value = isInInfiniteFlightZone ? "无限" :
+            Mathf.CeilToInt(Mathf.Max(0f, currentStamina)) + " / " + Mathf.CeilToInt(Mathf.Max(0f, maxStamina));
+        GUI.Label(new Rect(32f, 26f, 240f, 26f), "飞行耐久  " + value, staminaLabel);
+        GUI.color = new Color(0.22f, 0.25f, 0.30f);
+        GUI.DrawTexture(new Rect(32f, 58f, 240f, 20f), Texture2D.whiteTexture);
+        GUI.color = ratio <= 0.2f ? new Color(1f, 0.35f, 0.28f) : new Color(0.45f, 0.86f, 0.95f);
+        GUI.DrawTexture(new Rect(34f, 60f, 236f * ratio, 16f), Texture2D.whiteTexture);
+        GUI.color = oldColor;
+        GUI.matrix = oldMatrix;
     }
 
     void FixedUpdate()
@@ -283,9 +324,54 @@ public class PlayerController : MonoBehaviour
         currentStamina = maxStamina;
     }
 
+    private bool IsFormUnlocked(Form form)
+    {
+        switch (form)
+        {
+            case Form.Normal: return true;
+            case Form.Wing: return flightUnlocked;
+            case Form.Slime: return slimeFormUnlocked;
+            default: return false;
+        }
+    }
+
+    private void SwitchToNextUnlockedForm()
+    {
+        if (activeForms == null || activeForms.Count == 0)
+        {
+            return;
+        }
+
+        int currentIndex = activeForms.IndexOf(currentForm);
+        if (currentIndex < 0)
+        {
+            currentIndex = 0;
+        }
+
+        for (int step = 1; step <= activeForms.Count; step++)
+        {
+            int candidateIndex = (currentIndex + step) % activeForms.Count;
+            Form candidate = activeForms[candidateIndex];
+            if (!IsFormUnlocked(candidate))
+            {
+                continue;
+            }
+
+            formIndex = candidateIndex;
+            SwitchForm(candidate);
+            return;
+        }
+    }
+
+    public void UnlockSlimeForm()
+    {
+        slimeFormUnlocked = true;
+        Debug.Log("PlayerController: slime form unlocked.");
+    }
+
     void SwitchForm(Form targetForm)
     {
-        if (currentForm == targetForm) return;
+        if (currentForm == targetForm || !IsFormUnlocked(targetForm)) return;
 
         if (activeTreeClimber != null)
         {
@@ -360,7 +446,7 @@ public class PlayerController : MonoBehaviour
                 col.size = new Vector2(1f, 1f);
                 break;
             case Form.Wing:
-                sr.color = new Color(0.3f, 0.7f, 1f);
+                sr.color = Color.white;
                 rb.gravityScale = 1f;                  
                 col.size = new Vector2(1f, 1f);
                 break;
