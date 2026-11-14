@@ -19,6 +19,9 @@ public class CameraFollow : MonoBehaviour
 
     private Vector3 velocity = Vector3.zero;
     private Transform previousTarget;
+    private Camera cameraComponent;
+    private Transform backgroundTransform;
+    private SpriteRenderer backgroundRenderer;
 
     private void Awake()
     {
@@ -31,13 +34,46 @@ public class CameraFollow : MonoBehaviour
             }
         }
 
-        Camera cameraComponent = GetComponent<Camera>();
+        cameraComponent = GetComponent<Camera>();
         if (cameraComponent != null && cameraComponent.orthographic)
         {
             cameraComponent.orthographicSize = orthographicSize;
         }
+
+        backgroundTransform = transform.Find("CameraBackground");
+        if (backgroundTransform != null)
+        {
+            backgroundRenderer = backgroundTransform.GetComponent<SpriteRenderer>();
+            backgroundTransform.localPosition = new Vector3(0f, 0f, 10f);
+            FitBackgroundToView();
+        }
     }
 
+    private void FitBackgroundToView()
+    {
+        if (backgroundRenderer == null || backgroundTransform == null ||
+            cameraComponent == null || !cameraComponent.orthographic || backgroundRenderer.sprite == null)
+        {
+            return;
+        }
+
+        float spriteWidth = backgroundRenderer.sprite.bounds.size.x;
+        float spriteHeight = backgroundRenderer.sprite.bounds.size.y;
+        if (spriteWidth <= 0f || spriteHeight <= 0f)
+        {
+            return;
+        }
+
+        float parentScaleX = Mathf.Max(0.0001f, Mathf.Abs(transform.lossyScale.x));
+        float parentScaleY = Mathf.Max(0.0001f, Mathf.Abs(transform.lossyScale.y));
+        float viewHeight = cameraComponent.orthographicSize * 2f;
+        float viewWidth = viewHeight * cameraComponent.aspect;
+        float scale = Mathf.Max(
+            viewWidth / (spriteWidth * parentScaleX),
+            viewHeight / (spriteHeight * parentScaleY));
+
+        backgroundTransform.localScale = new Vector3(scale, scale, 1f);
+    }
     /// <summary>
     /// Changes the tracked object and clears the velocity left over from the
     /// previous target. This prevents a form switch from kicking the camera.
@@ -51,6 +87,7 @@ public class CameraFollow : MonoBehaviour
 
     private void LateUpdate()
     {
+        FitBackgroundToView();
         if (target == null) return;
 
         // The target is public for inspector compatibility, so also handle
@@ -94,7 +131,7 @@ public class CameraFollow : MonoBehaviour
 
         targetPosition.z = offset.z;
 
-        Camera cameraComponent = GetComponent<Camera>();
+
         if (keepGroundVisible && cameraComponent != null && cameraComponent.orthographic)
         {
             // Keep the top edge of the ground below the camera's bottom edge.
