@@ -20,9 +20,6 @@ public sealed class CatPlayerVisual : MonoBehaviour
     private const int TextureSize = 128;
     private const int RenderScale = 4;
     private const float PixelsPerUnit = 800f;
-    private const string RunningFramesResourcePath = "CatRunning/CatRun_";
-    private const int RunningFrameCount = 4;
-    private const float RunningFrameDuration = 0.1f;
 
     private SpriteRenderer spriteRenderer;
     private PlayerController player;
@@ -35,10 +32,6 @@ public sealed class CatPlayerVisual : MonoBehaviour
     private Sprite jumpFrame;
     private Sprite wingUpFrame;
     private Sprite wingDownFrame;
-    private Sprite[] runningFrames;
-    private Sprite[] flightFrames;
-    private Sprite[] climbFrames;
-    private float climbCycleTime;
 
     private bool showWalkFrameA;
     private float walkCycleTime;
@@ -64,7 +57,7 @@ public sealed class CatPlayerVisual : MonoBehaviour
         ReleaseTextures();
     }
 
-    private void LateUpdate()
+    private void Update()
     {
         if (!Application.isPlaying || spriteRenderer == null || player == null || body == null)
         {
@@ -82,26 +75,10 @@ public sealed class CatPlayerVisual : MonoBehaviour
             return;
         }
 
-        runningFrames = new Sprite[RunningFrameCount];
-        bool hasCompleteRunCycle = true;
-        for (int i = 0; i < RunningFrameCount; i++)
-        {
-            runningFrames[i] = Resources.Load<Sprite>(RunningFramesResourcePath + i.ToString("00"));
-            hasCompleteRunCycle &= runningFrames[i] != null;
-        }
-
-        if (!hasCompleteRunCycle)
-        {
-            runningFrames = null;
-        }
-
-        flightFrames = LoadActionFrames("Flight_", 3);
-        climbFrames = LoadActionFrames("Climb_", 4);
-
-        idleFrame = runningFrames != null ? runningFrames[0] : CreateFrame(DrawIdle);
-        walkFrameA = runningFrames != null ? runningFrames[0] : CreateFrame(t => DrawWalk(t, true));
-        walkFrameB = runningFrames != null ? runningFrames[1] : CreateFrame(t => DrawWalk(t, false));
-        jumpFrame = runningFrames != null ? runningFrames[1] : CreateFrame(DrawJump);
+        idleFrame = CreateFrame(DrawIdle);
+        walkFrameA = CreateFrame(t => DrawWalk(t, true));
+        walkFrameB = CreateFrame(t => DrawWalk(t, false));
+        jumpFrame = CreateFrame(DrawJump);
         wingUpFrame = CreateFrame(t => DrawWing(t, true));
         wingDownFrame = CreateFrame(t => DrawWing(t, false));
 
@@ -121,9 +98,9 @@ public sealed class CatPlayerVisual : MonoBehaviour
         if (player.currentForm == Form.Wing)
         {
             wingCycleTime += Time.deltaTime * 10f;
-            spriteRenderer.sprite = flightFrames != null
-                ? flightFrames[Mathf.FloorToInt(wingCycleTime) % flightFrames.Length]
-                : (Mathf.FloorToInt(wingCycleTime) % 2 == 0 ? wingUpFrame : wingDownFrame);
+            spriteRenderer.sprite = Mathf.FloorToInt(wingCycleTime) % 2 == 0
+                ? wingUpFrame
+                : wingDownFrame;
             transform.localPosition = new Vector3(
                 baseLocalPosition.x,
                 baseLocalPosition.y + Mathf.Abs(Mathf.Sin(Time.time * 12f)) * 0.015f,
@@ -131,20 +108,9 @@ public sealed class CatPlayerVisual : MonoBehaviour
             return;
         }
 
-        if (player.IsClimbingTree && climbFrames != null)
-        {
-            if (Mathf.Abs(body.velocity.y) > 0.05f)
-                climbCycleTime = (climbCycleTime + Time.deltaTime * 8f) % climbFrames.Length;
-            spriteRenderer.sprite = climbFrames[Mathf.FloorToInt(climbCycleTime)];
-            transform.localPosition = baseLocalPosition;
-            return;
-        }
-        climbCycleTime = 0f;
-
         bool grounded = IsGrounded();
         if (!grounded)
         {
-            walkCycleTime = 0f;
             spriteRenderer.sprite = jumpFrame;
             transform.localPosition = baseLocalPosition;
             return;
@@ -152,26 +118,14 @@ public sealed class CatPlayerVisual : MonoBehaviour
 
         if (Mathf.Abs(body.velocity.x) > 0.1f)
         {
-            if (runningFrames != null)
+            walkCycleTime += Time.deltaTime * Mathf.Abs(body.velocity.x);
+            if (walkCycleTime >= 0.12f)
             {
-                walkCycleTime += Time.deltaTime;
-                float cycleDuration = RunningFrameDuration * runningFrames.Length;
-                walkCycleTime %= cycleDuration;
-                int frameIndex = Mathf.FloorToInt(walkCycleTime / RunningFrameDuration);
-                spriteRenderer.sprite = runningFrames[frameIndex];
-            }
-            else
-            {
-                walkCycleTime += Time.deltaTime * Mathf.Abs(body.velocity.x);
-                if (walkCycleTime >= 0.12f)
-                {
-                    walkCycleTime = 0f;
-                    showWalkFrameA = !showWalkFrameA;
-                }
-
-                spriteRenderer.sprite = showWalkFrameA ? walkFrameA : walkFrameB;
+                walkCycleTime = 0f;
+                showWalkFrameA = !showWalkFrameA;
             }
 
+            spriteRenderer.sprite = showWalkFrameA ? walkFrameA : walkFrameB;
             transform.localPosition = new Vector3(
                 baseLocalPosition.x,
                 baseLocalPosition.y + Mathf.Abs(Mathf.Sin(Time.time * 14f)) * 0.02f,
@@ -179,8 +133,6 @@ public sealed class CatPlayerVisual : MonoBehaviour
         }
         else
         {
-            walkCycleTime = 0f;
-            showWalkFrameA = true;
             spriteRenderer.sprite = idleFrame;
             transform.localPosition = baseLocalPosition;
         }
@@ -188,12 +140,6 @@ public sealed class CatPlayerVisual : MonoBehaviour
 
     private void UpdateFacing()
     {
-        if (player.IsClimbingTree)
-        {
-            // All climbing frames face right: always face into the trunk.
-            spriteRenderer.flipX = player.TreeAttachmentSide > 0;
-            return;
-        }
         if (body.velocity.x < -0.05f)
         {
             spriteRenderer.flipX = true;
@@ -202,17 +148,6 @@ public sealed class CatPlayerVisual : MonoBehaviour
         {
             spriteRenderer.flipX = false;
         }
-    }
-
-    private static Sprite[] LoadActionFrames(string prefix, int count)
-    {
-        Sprite[] result = new Sprite[count];
-        for (int i = 0; i < count; i++)
-        {
-            result[i] = Resources.Load<Sprite>("CatActions/" + prefix + i.ToString("00"));
-            if (result[i] == null) return null;
-        }
-        return result;
     }
 
     private bool IsGrounded()
@@ -388,7 +323,6 @@ public sealed class CatPlayerVisual : MonoBehaviour
         }
 
         generatedTextures.Clear();
-        runningFrames = null;
         idleFrame = null;
         walkFrameA = null;
         walkFrameB = null;
